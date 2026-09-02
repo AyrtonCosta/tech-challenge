@@ -1,0 +1,8 @@
+{
+    "name": "tech-challenge",
+    "private": true,
+    "packageManager": "pnpm@11.25.0",
+    "engines": {
+      "node": ">=22.12.0"
+    }
+}
