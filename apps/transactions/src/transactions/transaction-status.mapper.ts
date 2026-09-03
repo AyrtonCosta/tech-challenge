@@ -19,7 +19,22 @@ const STORED_TO_CONTRACT: Record<StoredStatus, ContractStatus> = {
   REJECTED: 'rejected',
 };
 
-export const toStoredStatus = (status: ContractStatus): StoredStatus => CONTRACT_TO_STORED[status];
+export const toStoredStatus = (status: ContractStatus): StoredStatus => {
+  const stored = CONTRACT_TO_STORED[status];
 
-export const toContractStatus = (status: StoredStatus): ContractStatus =>
-  STORED_TO_CONTRACT[status];
+  if (!stored) {
+    throw new Error(`Status de contrato desconhecido: ${status}`);
+  }
+
+  return stored;
+};
+
+export const toContractStatus = (status: StoredStatus): ContractStatus => {
+  const contract = STORED_TO_CONTRACT[status];
+
+  if (!contract) {
+    throw new Error(`Status persistido desconhecido: ${status}`);
+  }
+
+  return contract;
+};
