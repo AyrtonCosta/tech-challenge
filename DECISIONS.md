@@ -183,3 +183,28 @@ não é um `switch` nem `toUpperCase()`: são dois `Record` completos, um em cad
 direção. Se alguém acrescentar um status em um dos lados e esquecer o outro, o
 `Record` fica incompleto e o compilador recusa o build — o mesmo raciocínio de
 "consistência vira regra do compilador" que justificou o monorepo.
+
+## Falha na mensageria (outbox)
+
+**Decisão:** gravar a transação e a mensagem na tabela `outbox_messages` na mesma
+transação SQL; um worker periódico publica no Kafka e só então marca `published`.
+
+**Alternativas consideradas:**
+
+- Publicar no Kafka depois do `INSERT` (na mesma request)
+- Publicar antes de gravar a transação
+- CDC com Debezium lendo o WAL do Postgres
+
+**Por quê:** Postgres e Kafka não compartilham transação. Publicar depois do
+commit perde o evento se o processo cair ou o broker recusar — a transação
+fica pendente para sempre, em silêncio. Publicar antes cria o inverso: o
+antifraude processa um id que ainda não existe. O outbox não elimina a
+dupla escrita: ele a move para um lugar que o banco já controla. Se o
+commit falha, não existe transação nem evento. Se passa, os dois existem.
+O preço é at-least-once (send ok + update falha = duplicata). A Fase 5
+trata a duplicata com update idempotente. Perder evento é pior do que
+duplicar.
+
+CDC com Debezium seria o passo seguinte em produção (sem polling). No
+prazo do desafio, uma tabela e um `setInterval` de 1s entregam a mesma
+garantia com código que cabe na defesa.
