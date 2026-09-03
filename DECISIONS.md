@@ -208,3 +208,23 @@ duplicar.
 CDC com Debezium seria o passo seguinte em produção (sem polling). No
 prazo do desafio, uma tabela e um `setInterval` de 1s entregam a mesma
 garantia com código que cabe na defesa.
+
+## Servico antifraude sem banco
+
+**Decisão:** o `anti-fraud` é um processo sem Postgres. Consome
+`transaction.created`, aplica uma função pura (`value > 1000` → rejeitado)
+e publica `transaction.status.updated`.
+
+**Alternativas consideradas:**
+
+- Avaliar a fraude no próprio serviço de transações, no request de criação
+- O antifraude ler a transação no banco em vez de confiar no evento
+
+**Por quê:** o enunciado pede dois serviços e comunicação por Kafka. Se a
+regra morasse no `POST`, a criação deixaria de ser assíncrona e o diagrama
+do desafio sumiria. Se o antifraude lesse o banco, os dois processos
+compartilhariam schema e falhariam juntos — e o evento já carrega o `value`.
+A função é pura para o limite de 1000 ser testável sem broker: 999,99 e
+1000 aprovam; 1000,01 rejeita. Payload inválido é logado e descartado da
+partição (não relança), para um JSON podre não travar o consumer; DLQ
+formal entra na Fase 5 junto com o retry.
