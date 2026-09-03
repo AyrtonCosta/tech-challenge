@@ -14,6 +14,8 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/challenge?schema=public
 
     steps:
       - name: Checkout

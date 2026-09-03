@@ -10,6 +10,9 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 
+# prisma client gerado (recriado pelo postinstall)
+**/src/generated/
+
 # tests
 coverage/
 
