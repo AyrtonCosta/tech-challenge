@@ -228,3 +228,33 @@ A função é pura para o limite de 1000 ser testável sem broker: 999,99 e
 1000 aprovam; 1000,01 rejeita. Payload inválido é logado e descartado da
 partição (não relança), para um JSON podre não travar o consumer; DLQ
 formal entra na Fase 5 junto com o retry.
+
+## Atualizacao de status idempotente
+
+**Decisão:** o `transactions` consome `transaction.status.updated` e aplica
+`UPDATE` só quando a linha ainda está `PENDING`. Payload inválido é logado e
+não relançado, para não travar a partição.
+
+**Alternativas consideradas:**
+
+- `UPDATE` cego pelo id, sem filtrar status
+- Ler o status e depois escrever (read-then-write)
+- Relançar no consumer quando `count === 0` ou o JSON for inválido
+- DLQ formal (tópico morto) neste mesmo passo
+
+**Por quê:** o Kafka entrega pelo menos uma vez. Um `UPDATE` só pelo id
+aceitaria um evento velho reescrever um status já final. `updateMany` com
+`PENDING` no `WHERE` é atômico: a primeira mensagem muda a linha; a
+duplicata altera zero linhas e não é erro. Read-then-write abre corrida
+entre dois consumidores da mesma partição (hoje há um, o contrato do
+grupo não garante isso para sempre).
+
+`count === 0` também cobre id inexistente — o antifraude pode ter
+publicado e o `INSERT` da transação ainda não ser visível em outro
+cenário, ou a mensagem ser de um ambiente antigo. Relançar esses casos
+prende o offset para sempre.
+
+DLQ com tópico próprio e retry com backoff continua o passo seguinte:
+hoje o descarte é consciente (log + commit do offset), o mesmo do
+anti-fraud, para o GET sair de `pending` sem acoplar a entrega ao desenho
+da fila morta.
