@@ -23,9 +23,20 @@ const STORED = {
   transactionType: { name: 'TRANSFER' },
 };
 
+const STATUS_EVENT = {
+  eventId: '33333333-3333-4333-8333-333333333333',
+  eventType: 'transaction.status.updated',
+  occurredAt: '2026-09-03T19:58:24.406Z',
+  version: 1 as const,
+  data: {
+    transactionExternalId: STORED.id,
+    status: 'rejected' as const,
+  },
+};
+
 function buildService(prisma: {
   $transaction?: jest.Mock;
-  transaction?: { findUnique: jest.Mock };
+  transaction?: { findUnique?: jest.Mock; updateMany?: jest.Mock };
 }): TransactionsService {
   return new TransactionsService(prisma as unknown as PrismaService);
 }
@@ -77,5 +88,20 @@ describe('TransactionsService', () => {
     });
 
     await expect(service.findById(STORED.id)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('atualiza so quando o status ainda e pendente', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const service = buildService({ transaction: { updateMany } });
+    await service.applyStatusUpdate(STATUS_EVENT);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: STORED.id, status: 'PENDING' },
+      data: { status: 'REJECTED' },
+    });
+  });
+  it('ignora reprocessamento quando nenhuma linha pendente muda', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const service = buildService({ transaction: { updateMany } });
+    await expect(service.applyStatusUpdate(STATUS_EVENT)).resolves.toBeUndefined();
   });
 });

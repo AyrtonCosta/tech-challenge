@@ -8,5 +8,6 @@ import { TransactionsService } from './transactions.service';
   imports: [PrismaModule],
   controllers: [TransactionsController],
   providers: [TransactionsService],
+  exports: [TransactionsService],
 })
 export class TransactionsModule {}
