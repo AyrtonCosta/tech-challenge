@@ -36,7 +36,12 @@ const STATUS_EVENT = {
 
 function buildService(prisma: {
   $transaction?: jest.Mock;
-  transaction?: { findUnique?: jest.Mock; updateMany?: jest.Mock };
+  transaction?: {
+    findUnique?: jest.Mock;
+    updateMany?: jest.Mock;
+    findMany?: jest.Mock;
+    count?: jest.Mock;
+  };
 }): TransactionsService {
   return new TransactionsService(prisma as unknown as PrismaService);
 }
@@ -103,5 +108,32 @@ describe('TransactionsService', () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 0 });
     const service = buildService({ transaction: { updateMany } });
     await expect(service.applyStatusUpdate(STATUS_EVENT)).resolves.toBeUndefined();
+  });
+
+  it('lista com filtro de status e devolve total filtrado', async () => {
+    const findMany = jest.fn().mockResolvedValue([STORED]);
+    const count = jest.fn().mockResolvedValue(1);
+    const $transaction = jest.fn(async (ops: unknown[]) => Promise.all(ops));
+    const service = buildService({
+      $transaction,
+      transaction: { findMany, count },
+    });
+
+    const result = await service.list({
+      page: 1,
+      pageSize: 10,
+      status: 'pending',
+    });
+
+    expect(result.total).toBe(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.transactionStatus).toEqual({ name: 'pending' });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'PENDING' }),
+        skip: 0,
+        take: 10,
+      }),
+    );
   });
 });

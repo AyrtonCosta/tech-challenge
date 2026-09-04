@@ -258,3 +258,30 @@ DLQ com tópico próprio e retry com backoff continua o passo seguinte:
 hoje o descarte é consciente (log + commit do offset), o mesmo do
 anti-fraud, para o GET sair de `pending` sem acoplar a entrega ao desenho
 da fila morta.
+
+## Listagem com offset
+
+**Decisão:** `GET /transactions` com paginação por `page`/`pageSize` (offset),
+filtros opcionais no `WHERE` e `count` na mesma ida ao banco. Teto de 50
+itens por página.
+
+**Alternativas consideradas:**
+
+- Cursor (`createdAt` + id) em vez de offset
+- Trazer a tabela inteira e paginar na API
+- Dois requests separados para lista e total
+
+**Por quê:** o dashboard pede página numerada. Offset mapeia direto para
+`skip`/`take` e para `Math.ceil(total / pageSize)` na UI. Cursor é melhor
+em feed infinito e em tabela que só cresce na ponta — aqui o filtro por
+período e status muda o conjunto a cada request, e o enunciado não pede
+scroll infinito.
+
+Trazer tudo estoura memória no primeiro milhar de linhas. Os índices
+`status+createdAt`, `transferTypeId+createdAt` e `createdAt` já existem
+por isso: o `WHERE` tem que cair neles, não em seq scan.
+
+`findMany` e `count` no mesmo `$transaction([...])` evitam a tela mostrar
+cinco itens e `total` de um instante depois, se o antifraude gravar no
+meio. Offset ainda sofre _drift_ entre páginas sob escrita alta; para o
+volume do desafio e para a defesa, é o preço certo.

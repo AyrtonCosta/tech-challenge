@@ -5,7 +5,7 @@ import {
   type TransactionCreatedEvent,
 } from '@tech-challenge/contracts';
 import { randomUUID } from 'node:crypto';
-
+import type { ListTransactionsQuery } from './list-transactions.schema';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateTransactionBody } from './create-transaction.schema';
@@ -17,6 +17,13 @@ export type TransactionResponse = {
   transactionStatus: { name: string };
   value: number;
   createdAt: Date;
+};
+
+export type TransactionListResponse = {
+  items: TransactionResponse[];
+  page: number;
+  pageSize: number;
+  total: number;
 };
 
 @Injectable()
@@ -104,6 +111,35 @@ export class TransactionsService {
       });
     }
     return this.toResponse(transaction);
+  }
+
+  async list(query: ListTransactionsQuery): Promise<TransactionListResponse> {
+    const where: Prisma.TransactionWhereInput = {
+      status: query.status ? toStoredStatus(query.status) : undefined,
+      transferTypeId: query.transferTypeId,
+      createdAt: {
+        gte: query.from ? new Date(query.from) : undefined,
+        lte: query.to ? new Date(query.to) : undefined,
+      },
+    };
+
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.transaction.findMany({
+        where,
+        include: { transactionType: true },
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.transaction.count({ where }),
+    ]);
+
+    return {
+      items: rows.map((row) => this.toResponse(row)),
+      page: query.page,
+      pageSize: query.pageSize,
+      total,
+    };
   }
 
   async applyStatusUpdate(payload: unknown): Promise<void> {
