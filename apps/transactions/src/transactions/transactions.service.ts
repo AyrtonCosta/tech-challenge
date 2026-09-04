@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { TOPICS, type TransactionCreatedEvent } from '@tech-challenge/contracts';
+import {
+  TOPICS,
+  transactionStatusUpdatedEventSchema,
+  type TransactionCreatedEvent,
+} from '@tech-challenge/contracts';
 import { randomUUID } from 'node:crypto';
 
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateTransactionBody } from './create-transaction.schema';
-import { toContractStatus } from './transaction-status.mapper';
+import { toContractStatus, toStoredStatus } from './transaction-status.mapper';
 
 export type TransactionResponse = {
   transactionExternalId: string;
@@ -100,5 +104,17 @@ export class TransactionsService {
       });
     }
     return this.toResponse(transaction);
+  }
+
+  async applyStatusUpdate(payload: unknown): Promise<void> {
+    const event = transactionStatusUpdatedEventSchema.parse(payload);
+
+    await this.prisma.transaction.updateMany({
+      where: {
+        id: event.data.transactionExternalId,
+        status: 'PENDING',
+      },
+      data: { status: toStoredStatus(event.data.status) },
+    });
   }
 }
