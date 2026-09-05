@@ -285,3 +285,28 @@ por isso: o `WHERE` tem que cair neles, não em seq scan.
 cinco itens e `total` de um instante depois, se o antifraude gravar no
 meio. Offset ainda sofre _drift_ entre páginas sob escrita alta; para o
 volume do desafio e para a defesa, é o preço certo.
+
+## Atualizacao de status na interface
+
+**Decisão:** listagem e detalhe são client components que chamam a API
+a cada 2s. Loading só na primeira busca; poll seguinte atualiza no lugar.
+Valores em BRL e datas em `dd/mm/aaaa` (`America/Sao_Paulo`) — o contrato
+da API continua número e ISO. Sem WebSocket e sem SSE.
+
+**Alternativas consideradas:**
+
+- Recarregar a página (F5) ou um botão "atualizar"
+- WebSocket/SSE no servico de transacoes
+- Invalidar cache do Next (server component + `revalidate`)
+
+**Por quê:** o enunciado pede que a UI reflita um status que muda fora
+do request do usuario. F5 funciona e esconde o problema. WebSocket e SSE
+exigem um canal novo no Nest e outro modo de falha — para um poll de 2s
+no `GET` que o dashboard ja precisa, e cerimonia. Server component com
+revalidate atrasa a mudanca pelo periodo do cache.
+
+Poll que falha depois da primeira carga nao apaga a tabela: perder a
+lista a cada blip de rede e pior do que dado velho por mais 2s. A
+primeira falha continua erro explicito (API fora, CORS). A formatacao
+mora so na borda da UI para o JSON e os testes de contrato nao
+dependerem de locale.
