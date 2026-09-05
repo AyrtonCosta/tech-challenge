@@ -310,3 +310,63 @@ lista a cada blip de rede e pior do que dado velho por mais 2s. A
 primeira falha continua erro explicito (API fora, CORS). A formatacao
 mora so na borda da UI para o JSON e os testes de contrato nao
 dependerem de locale.
+
+## Estrategia de testes
+
+**Decisão:** Jest no quality gate, testando comportamento. Backend: regra
+de valor, outbox, update só em `PENDING`, filtro da listagem e payload
+inválido. Frontend: estados de loading, erro e vazio da lista e do
+detalhe; schema do formulário. Sem e2e no CI e sem meta de cobertura.
+
+**Alternativas consideradas:**
+
+- Playwright ou supertest contra Postgres + Kafka no Actions
+- Cobertura mínima (ex.: 80%) como gate
+- Só typecheck, sem teste automatizado
+
+**Por quê:** o PRACTICES pede teste que quebra quando o comportamento
+quebra, não número de linhas. A regra `value > 1000`, a dupla escrita
+do outbox e a idempotência do status são funções que o Jest cobre sem
+broker. Kafka no CI adiciona flakiness e não prova o que o unitário já
+prova. Cobertura percentual deixa passar teste que só instancia classe.
+E2e do fluxo real fica na máquina, com Docker — o mesmo caminho que o
+avaliador usa para ver o diagrama.
+
+## Lidando com alto volume de escritas e leituras concorrentes
+
+**Decisão:** a abordagem tem duas fases. A fundação atual já mitiga
+gargalos clássicos de concorrência. Ferramenta nova (Redis, réplica,
+Debezium, shard) só entra quando a métrica do gargalo for comprovada.
+
+**Alternativas consideradas:**
+
+- Começar o projeto com Redis no cache de leituras
+- Começar com sharding no PostgreSQL ou read replicas
+- Começar com CDC (Debezium) e várias partições no Kafka
+
+**Por quê — fundação atual (concorrência já resolvida no código):**
+UUID v7 evita fragmentar o índice B-tree sob rajada de `INSERT`. O
+outbox faz a API devolver 201 sem depender do Kafka estar no ar no
+mesmo request. O `UPDATE` só em `PENDING` é idempotente: dois
+consumidores da mesma mensagem não corrompem o status final.
+
+**Por quê — evolução das escritas (volume massivo):** quando o poll
+do outbox virar gargalo, a troca é CDC (Debezium) lendo o WAL do
+Postgres. Para processar mais eventos, o `anti-fraud` escala na
+horizontal: mais partições no tópico e a mensagem continua roteada
+pela chave `transactionExternalId`, para a ordem por transação se
+manter.
+
+**Por quê — evolução das leituras (dashboard):** se a listagem
+começar a disputar I/O com a escrita, o primeiro passo é read replica:
+o `transactions` grava no primário e lê a lista na réplica. Atraso de
+replicação é o preço — o poll de 2s já tolera atraso dessa ordem; se
+o status na tela precisar ser mais fresco que o lag, o GET por id
+continua no primário. Paginação profunda lenta troca offset por cursor
+(`createdAt` + id). Redis entra só para totalizador que não muda a
+cada status (contar o dia fechado, não a lista ao vivo).
+
+**Por quê — não colocar isso no dia 1:** Redis, réplica e Debezium
+sem volume medido são complexidade operacional. A fundação (v7,
+outbox, update idempotente, índice no filtro) é o que aguenta o
+primeiro salto; o resto é troca quando a métrica doer.
